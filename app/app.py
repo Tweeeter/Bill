@@ -378,16 +378,34 @@ def parse_invoice_data(text, pdf_path=None):
             # Aggregate values
             agg = aggregated_items[hsn]
             agg['quantity'] += parse_float(item['quantity'])
-            agg['taxable_amount'] += parse_float(item['taxable_amount'])
+            
+            # For taxable_amount aggregation, use the Amount column (invoice_value) instead of Rate
+            agg['taxable_amount'] += parse_float(item['invoice_value'])
+            
             agg['cgst'] += parse_float(item['cgst'])
             agg['sgst'] += parse_float(item['sgst'])
             agg['invoice_value'] += parse_float(item['invoice_value'])
             agg['count'] += 1
 
+
         # Replace all_items with aggregated list
         if aggregated_items:
              new_all_items = []
+             calculated_total_value = 0.0
              for idx, (hsn, agg) in enumerate(aggregated_items.items(), 1):
+                 
+                 # Calculate Invoice Value = Taxable + CGST + SGST (per user request)
+                 # Note: taxable_amount here is already summing the 'Amount' column from original data
+                 # If original Amount column included tax, adding tax again would double count.
+                 # Assuming 'Amount' column was Taxable Value.
+                 # User specific request: "in the invoice value cell write the sum of taxable amount cgst sgst"
+                 
+                 # Since we updated taxable_amount aggregation to sum 'invoice_value' (Amount column),
+                 # we should assume that was the Taxable Value. 
+                 
+                 item_invoice_value = agg['taxable_amount'] + agg['cgst'] + agg['sgst']
+                 calculated_total_value += item_invoice_value
+                 
                  new_all_items.append({
                      'sno': str(idx),
                      'hsn': hsn,
@@ -397,9 +415,12 @@ def parse_invoice_data(text, pdf_path=None):
                      'taxrate': agg['taxrate'],
                      'cgst': f"{agg['cgst']:.2f}",
                      'sgst': f"{agg['sgst']:.2f}",
-                     'invoice_value': f"{agg['invoice_value']:.2f}"
+                     'invoice_value': f"{item_invoice_value:.2f}"
                  })
              all_items = new_all_items
+             
+             # Store the calculated total
+             common_data['calculated_total_invoice_value'] = f"{calculated_total_value:.2f}"
 
     # If no table items found, create a single item with empty values
     if not all_items:
@@ -471,7 +492,7 @@ def parse_invoice_data(text, pdf_path=None):
         'cgst': '',  # Empty
         'sgst': '',  # Empty
         'invoice_value': '',  # Empty
-        'total_invoice_value': common_data.get('total_invoice_value', '')  # Total in last row
+        'total_invoice_value': common_data.get('calculated_total_invoice_value', common_data.get('total_invoice_value', ''))  # Use calculated total if available
     })
 
 
